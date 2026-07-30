@@ -1,0 +1,11 @@
+# estado local de pruebas (el bot commitea su propio state.json en Actions)
+state_imax.json
+state_*.json
+# dumps de debug del scraper viejo
+debug_page.html
+debug_xhr.txt
+log.txt
+# python / venv
+__pycache__/
+*.pyc
+.venv/

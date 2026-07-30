@@ -1,0 +1,59 @@
+name: monitor-funciones
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # cada 10 min (GitHub puede demorarlo unos minutos)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # El monitor usa el endpoint JSON de Voy al Cine y solo la stdlib:
+      # no hay pip install ni navegador. Corre en ~1s.
+      - name: Run monitor
+        id: run
+        continue-on-error: true          # exit 1 = falla real, pero igual quiero persistir state
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          FILM_ID: "5875"
+          HOUSE_ID: "3250"
+          VENUE_IS_IMAX: "1"
+        run: python monitor.py
+
+      # Siempre persistimos state.json, incluso si el monitor falló: ahí vive el
+      # flag "falla_avisada" que evita re-avisar la misma falla cada 10 min.
+      - name: Persist state
+        if: always()
+        run: |
+          git config user.name "monitor-bot"
+          git config user.email "bot@users.noreply.github.com"
+          if [ -f state.json ]; then
+            git add state.json
+            if ! git diff --staged --quiet; then
+              git commit -m "state $(date -u +%FT%TZ)"
+              git pull --rebase --autostash || true
+              git push
+            fi
+          fi
+
+      # Reflejamos en rojo si el monitor salió con error (después de persistir).
+      - name: Fail if monitor failed
+        if: ${{ always() && steps.run.outcome == 'failure' }}
+        run: |
+          echo "monitor.py salió con código de error — revisá el paso 'Run monitor'."
+          exit 1
