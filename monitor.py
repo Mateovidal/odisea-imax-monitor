@@ -332,6 +332,13 @@ def main() -> int:
     prev_max = state.get("max_fecha", "")
     first_run = "funciones" not in state
 
+    print(
+        f"cfg: SUPPRESS_HORIZON_ROLL={'1' if SUPPRESS_HORIZON_ROLL else '0'} "
+        f"telegram={'on' if TG_TOKEN and TG_CHAT_ID else 'off'} "
+        f"email={'on' if RESEND_API_KEY else 'off'} "
+        f"deadman={'on' if HC_PING_URL else 'off'}"
+    )
+
     # ---- fetch -----------------------------------------------------------
     try:
         data = fetch_tree()
