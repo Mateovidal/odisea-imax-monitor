@@ -79,6 +79,30 @@ gh secret set TG_CHAT_ID
 
 El `state.json` lo commitea el propio workflow para no perder memoria entre corridas.
 
+## Notificaciones: Telegram + email, con garantía de entrega
+
+- Manda a **Telegram** y a **email** (Resend). **Entregado = al menos un canal confirmó.**
+  Si uno entrega y el otro falla, cuenta como entregado y se loguea el fallo.
+- El set de "vistas" **no avanza si ningún canal entregó** → reintenta la próxima corrida.
+  Se chequea la respuesta real (`ok:true` de Telegram / `id` de Resend), no solo que no tire.
+- **`SUPPRESS_HORIZON_ROLL=0`** (default): Showcase libera fecha por fecha, así que el
+  avance de la ventana de un día **es el evento** — se avisa.
+
+## Dead-man's switch
+
+Si `HC_PING_URL` está seteado, se pinguea al final de **cada corrida** (healthchecks.io).
+Si el scheduler de Actions deja de disparar, healthchecks.io te avisa — cosa que el
+propio monitor no puede hacer si nunca corre.
+
+## Secrets (los cargás vos, nunca van al repo)
+
+```bash
+gh secret set TG_TOKEN --repo Mateovidal/odisea-imax-monitor
+gh secret set TG_CHAT_ID --repo Mateovidal/odisea-imax-monitor
+gh secret set RESEND_API_KEY --repo Mateovidal/odisea-imax-monitor   # opcional (email)
+gh secret set HC_PING_URL --repo Mateovidal/odisea-imax-monitor       # opcional (dead-man)
+```
+
 ## Variables
 
 | Var | Default | Qué hace |
@@ -86,10 +110,16 @@ El `state.json` lo commitea el propio workflow para no perder memoria entre corr
 | `FILM_ID` | `5875` | La Odisea |
 | `HOUSE_ID` | `3250` | sala IMAX (Norcenter) |
 | `VENUE_IS_IMAX` | `1` | `0` = filtra por la palabra IMAX en el formato |
-| `SUPPRESS_HORIZON_ROLL` | `1` | `0` = avisa también el avance natural de la ventana |
+| `SUPPRESS_HORIZON_ROLL` | `0` | `1` = suprime el avance natural de la ventana |
+| `EMAIL_TO` | matevidal7@gmail.com | destinatario del email |
+| `EMAIL_FROM` | onboarding@resend.dev | remitente Resend (ver nota de dominio) |
 | `FILM_URL` | pelicula.aspx | link "Comprar" que va en la alerta |
 | `STATE_FILE` | `state.json` | memoria entre corridas |
 | `DEBUG` | — | `1` = lista cada función detectada |
+
+> **Resend sin dominio verificado**: con `onboarding@resend.dev` solo podés enviarte a
+> vos mismo (la casilla con la que creaste la cuenta Resend). Si registrás Resend con
+> matevidal7@gmail.com, el email a esa dirección funciona sin verificar dominio.
 
 ## Nota
 
