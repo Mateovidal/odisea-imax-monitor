@@ -28,14 +28,9 @@ jobs:
         id: run
         continue-on-error: true          # exit 1 = falla real, pero igual quiero persistir state
         env:
+          # Solo Telegram (email/dead-man desactivados a pedido del usuario).
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          # Email (Resend). Si RESEND_API_KEY no está seteado, el canal email se saltea.
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          EMAIL_TO: "matevidal7@gmail.com"
-          EMAIL_FROM: "Monitor IMAX <onboarding@resend.dev>"
-          # Dead-man's switch (healthchecks.io). Si no está seteado, no se pinguea.
-          HC_PING_URL: ${{ secrets.HC_PING_URL }}
           FILM_ID: "5875"
           HOUSE_ID: "3250"
           VENUE_IS_IMAX: "1"
