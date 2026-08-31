@@ -129,8 +129,13 @@
   "2026-09-08|IMAX-Subtitulado|12:00": "mar 2026-09-08 12:00 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
   "2026-09-08|IMAX-Subtitulado|15:25": "mar 2026-09-08 15:25 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
   "2026-09-09|IMAX-Subtitulado|12:00": "mié 2026-09-09 12:00 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
-  "2026-09-09|IMAX-Subtitulado|15:25": "mié 2026-09-09 15:25 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)"
+  "2026-09-09|IMAX-Subtitulado|15:25": "mié 2026-09-09 15:25 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
+  "2026-09-03|IMAX-Subtitulado|16:15": "jue 2026-09-03 16:15 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
+  "2026-09-05|IMAX-Subtitulado|19:00": "sáb 2026-09-05 19:00 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
+  "2026-09-07|IMAX-Subtitulado|16:15": "lun 2026-09-07 16:15 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
+  "2026-09-08|IMAX-Subtitulado|19:00": "mar 2026-09-08 19:00 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
+  "2026-09-09|IMAX-Subtitulado|19:00": "mié 2026-09-09 19:00 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)"
  },
- "ultimo_conteo": 24,
+ "ultimo_conteo": 27,
  "max_fecha": "2026-09-09"
 }
