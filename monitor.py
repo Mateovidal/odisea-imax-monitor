@@ -22,7 +22,8 @@ Garantia de entrega:
       proxima corrida.
 
 Variables:
-    FILM_ID / HOUSE_ID / FILM_URL / VENUE_IS_IMAX / STATE_FILE / DEBUG
+    FILMS "5875,6027" (lista de filmids en la misma sala) / HOUSE_ID / VENUE_IS_IMAX
+    STATE_FILE / DEBUG
     SUPPRESS_HORIZON_ROLL "0" (default): la fecha nueva del borde SI avisa
                    (Showcase libera fecha por fecha, el roll es el evento).
     TG_TOKEN / TG_CHAT_ID          Telegram
@@ -41,15 +42,26 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-FILM_ID = os.environ.get("FILM_ID", "5875")
 HOUSE_ID = os.environ.get("HOUSE_ID", "3250")
-API_URL = f"https://api.voyalcine.net/films/{FILM_ID}/tree/{HOUSE_ID}"
+# Lista de pelis a vigilar en la misma sala IMAX (comma-separated). Back-compat FILM_ID.
+FILMS = [
+    f.strip()
+    for f in os.environ.get("FILMS", os.environ.get("FILM_ID", "5875,6027")).split(",")
+    if f.strip()
+]
 
-FILM_URL = os.environ.get(
-    "FILM_URL",
-    f"https://entradas.todoshowcase.com/showcase/pelicula.aspx"
-    f"?filmid={FILM_ID}&house_id={HOUSE_ID}",
-)
+
+def api_url(film: str) -> str:
+    return f"https://api.voyalcine.net/films/{film}/tree/{HOUSE_ID}"
+
+
+def buy_url(film: str) -> str:
+    return (
+        f"https://entradas.todoshowcase.com/showcase/pelicula.aspx"
+        f"?filmid={film}&house_id={HOUSE_ID}"
+    )
+
+
 VENUE_IS_IMAX = os.environ.get("VENUE_IS_IMAX", "1") == "1"
 # Default 0: Showcase libera fecha por fecha, el avance de la ventana es EL evento.
 SUPPRESS_HORIZON_ROLL = os.environ.get("SUPPRESS_HORIZON_ROLL", "0") == "1"
@@ -208,14 +220,14 @@ def ping_healthcheck() -> None:
 # --------------------------------------------------------------------------
 # Fetch + parse
 # --------------------------------------------------------------------------
-def fetch_tree() -> dict:
+def fetch_tree(url: str) -> dict:
     last = "sin detalle"
     for i in range(3):
         if i:
             time.sleep(min(2 ** (i - 1), 4))
         try:
             req = urllib.request.Request(
-                API_URL, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+                url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=30) as r:
                 data = json.loads(r.read())
@@ -303,106 +315,150 @@ def save_state(state: dict) -> None:
 # --------------------------------------------------------------------------
 # Mensajes
 # --------------------------------------------------------------------------
-def baseline_text(funcs: dict, cur_max: str) -> str:
+def baseline_text(name: str, funcs: dict, cur_max: str, buy: str) -> str:
+    if not funcs:
+        return (
+            f"✅ Monitor IMAX activo para <b>{escape_html(name)}</b>.\n"
+            f"Todavía no hay funciones publicadas — te aviso apenas abran.\n"
+            f"<a href='{escape_html(buy)}'>Ver</a>"
+        )
     dias = len({key_date(k) for k in funcs})
     return (
-        f"✅ Monitor IMAX activo.\nFunciones IMAX publicadas ahora: "
-        f"<b>{len(funcs)}</b> en {dias} día/s (hasta {cur_max}).\n"
-        f"<a href='{escape_html(FILM_URL)}'>Ver</a>"
+        f"✅ Monitor IMAX activo para <b>{escape_html(name)}</b>.\n"
+        f"Funciones publicadas ahora: <b>{len(funcs)}</b> en {dias} día/s (hasta {cur_max}).\n"
+        f"<a href='{escape_html(buy)}'>Ver</a>"
     )
 
 
-def new_text(nuevas: dict) -> str:
+def new_text(name: str, nuevas: dict, buy: str) -> str:
     lineas = "\n".join(f"• {escape_html(v)}" for v in sorted(nuevas.values())[:25])
     extra = f"\n… y {len(nuevas) - 25} más" if len(nuevas) > 25 else ""
     return (
-        f"🎬 <b>{len(nuevas)} función/es nuevas en IMAX</b>\n\n{lineas}{extra}\n\n"
-        f"<a href='{escape_html(FILM_URL)}'>Comprar ahora</a>"
+        f"🎬 <b>{len(nuevas)} función/es nuevas en IMAX — {escape_html(name)}</b>\n\n"
+        f"{lineas}{extra}\n\n<a href='{escape_html(buy)}'>Comprar ahora</a>"
     )
 
 
-def fault_text(detail: str) -> str:
-    return f"⚠️ <b>Monitor con problemas</b>\n{escape_html(detail)}\n{escape_html(API_URL)}"
+def fault_text(detail: str, url: str) -> str:
+    return f"⚠️ <b>Monitor con problemas</b>\n{escape_html(detail)}\n{escape_html(url)}"
+
+
+def migrate_state(state: dict) -> dict:
+    """Formato viejo (plano, una peli = 5875) -> {'films': {'5875': {...}}}."""
+    if "films" in state:
+        return state
+    films: dict = {}
+    if "funciones" in state:  # estado plano = era La Odisea (5875)
+        old = {
+            k: state[k]
+            for k in ("funciones", "ultimo_conteo", "max_fecha", "nombre")
+            if k in state
+        }
+        # Estaba en falla 'cero' y a 0 (terminó cartel): lo dejo limpio y en 0,
+        # así no queda rojo perpetuo. Si vuelve con funciones nuevas, avisa.
+        old["ultimo_conteo"] = 0
+        old.pop("falla_avisada", None)
+        films["5875"] = old
+    return {"films": films}
+
+
+def process_film(film: str, fs: dict) -> int:
+    """Procesa UNA peli; muta su estado `fs`. Devuelve 0 (ok/verde) o 1 (reintentar)."""
+    seen: dict = fs.get("funciones", {})
+    prev_count = fs.get("ultimo_conteo", 0)
+    prev_max = fs.get("max_fecha", "")
+    first_run = "funciones" not in fs
+    url = api_url(film)
+    buy = buy_url(film)
+    name = fs.get("nombre", film)
+
+    try:
+        data = fetch_tree(url)
+        funcs = parse_funcs(data)
+    except ScrapeError as e:
+        kind = e.kind
+        if fs.get("falla_avisada") != kind:
+            if notify(
+                fault_text(f"[{name}] No pude leer la cartelera: {e}", url),
+                f"⚠️ Monitor IMAX ({name})",
+            ):
+                fs["falla_avisada"] = kind
+        else:
+            print(f"[{film}] {kind} (ya avisado)")
+        return 1
+
+    name = data.get("name") or name
+    fs["nombre"] = name
+    nuevas = {k: v for k, v in funcs.items() if k not in seen}
+    cur_max = max((key_date(k) for k in funcs), default="")
+    print(f"[{film} {name}] detectadas={len(funcs)} nuevas={len(nuevas)} previas={prev_count}")
+    if DEBUG:
+        for v in sorted(funcs.values()):
+            print("   ", v)
+
+    # ---- drop-a-0: avisar UNA vez, luego aceptar 0 como normal (verde) ----
+    if not first_run and prev_count > 0 and len(funcs) == 0:
+        if fs.get("falla_avisada") != "cero":
+            if notify(
+                fault_text(
+                    f"[{name}] Antes veía {prev_count} funciones y ahora 0 "
+                    "(¿terminó su ciclo o se rompió?).",
+                    url,
+                ),
+                f"⚠️ {name}: 0 funciones",
+            ):
+                fs["falla_avisada"] = "cero"
+                fs["ultimo_conteo"] = 0  # acepto 0 como nuevo normal
+                return 0
+            return 1  # no se entregó -> reintenta la próxima
+        fs["ultimo_conteo"] = 0  # ya avisado: 0 es el normal, silencio + verde
+        return 0
+
+    fs.pop("falla_avisada", None)  # API ok con funciones -> limpio falla
+
+    if first_run:
+        if not notify(baseline_text(name, funcs, cur_max, buy), f"✅ Monitor IMAX: {name}"):
+            return 1  # no siembro, reintenta
+        seen.update(funcs)
+        fs.update({"funciones": seen, "ultimo_conteo": len(funcs), "max_fecha": cur_max})
+        return 0
+
+    if nuevas:
+        rolled = SUPPRESS_HORIZON_ROLL and is_horizon_roll(nuevas, prev_max)
+        if not rolled:
+            if not notify(new_text(name, nuevas, buy), f"🎬 {len(nuevas)} nuevas en IMAX — {name}"):
+                return 1  # CRÍTICO: no avanzar el set de vistas, reintentar
+        else:
+            print(f"[{film}] roll suprimido")
+        seen.update(funcs)
+        fs.update({"funciones": seen, "ultimo_conteo": len(funcs), "max_fecha": cur_max})
+        return 0
+
+    # sin novedades
+    fs.update({"funciones": seen, "ultimo_conteo": len(funcs), "max_fecha": cur_max})
+    return 0
 
 
 def main() -> int:
-    state = load_state()
-    seen: dict = state.get("funciones", {})
-    prev_count = state.get("ultimo_conteo", 0)
-    prev_max = state.get("max_fecha", "")
-    first_run = "funciones" not in state
-
     print(
-        f"cfg: SUPPRESS_HORIZON_ROLL={'1' if SUPPRESS_HORIZON_ROLL else '0'} "
+        f"cfg: FILMS={','.join(FILMS)} house={HOUSE_ID} "
+        f"SUPPRESS_HORIZON_ROLL={'1' if SUPPRESS_HORIZON_ROLL else '0'} "
         f"telegram={'on' if TG_TOKEN and TG_CHAT_ID else 'off'} "
         f"email={'on' if RESEND_API_KEY else 'off'} "
         f"deadman={'on' if HC_PING_URL else 'off'}"
     )
-
-    # ---- fetch -----------------------------------------------------------
-    try:
-        data = fetch_tree()
-        funcs = parse_funcs(data)
-    except ScrapeError as e:
-        kind = e.kind
-        if state.get("falla_avisada") != kind:
-            if notify(fault_text(f"No pude leer la cartelera: {e}"), "⚠️ Monitor IMAX con problemas"):
-                state["falla_avisada"] = kind
-                save_state(state)
-        else:
-            print(f"[!] {kind} (ya avisado): {e}")
-        return 1
-
-    nuevas = {k: v for k, v in funcs.items() if k not in seen}
-    cur_max = max((key_date(k) for k in funcs), default="")
-    print(f"detectadas={len(funcs)} nuevas={len(nuevas)} previas={prev_count} max_fecha={cur_max}")
-
-    if DEBUG:
-        for v in sorted(funcs.values()):
-            print("  ", v)
-
-    # ---- regresión N>0 -> 0 ----------------------------------------------
-    if not first_run and prev_count > 0 and len(funcs) == 0:
-        if state.get("falla_avisada") != "cero":
-            if notify(
-                fault_text(f"Antes veía {prev_count} funciones y ahora 0. Revisá antes de confiar en el silencio."),
-                "⚠️ Monitor IMAX: 0 funciones",
-            ):
-                state["falla_avisada"] = "cero"
-                save_state(state)
-        return 1
-
-    # API OK: si había falla avisada, la limpio (cambio silencioso).
-    had_fault = state.pop("falla_avisada", None) is not None
-
-    # ---- primera corrida: baseline (entrega garantizada) -----------------
-    if first_run:
-        if not notify(baseline_text(funcs, cur_max), "✅ Monitor IMAX activo"):
-            return 1  # no siembro, reintenta
-        seen.update(funcs)
-        state.update({"funciones": seen, "ultimo_conteo": len(funcs), "max_fecha": cur_max})
-        save_state(state)
-        return 0
-
-    # ---- funciones nuevas ------------------------------------------------
-    if nuevas:
-        rolled = SUPPRESS_HORIZON_ROLL and is_horizon_roll(nuevas, prev_max)
-        if not rolled:
-            if not notify(new_text(nuevas), f"🎬 {len(nuevas)} función/es nuevas en IMAX — La Odisea"):
-                return 1  # CRÍTICO: no avanzar el set de vistas, reintentar
-        else:
-            print(f"[i] Roll suprimido (SUPPRESS_HORIZON_ROLL=1): {cur_max}")
-        seen.update(funcs)
-        state.update({"funciones": seen, "ultimo_conteo": len(funcs), "max_fecha": cur_max})
-        save_state(state)
-        return 0
-
-    # ---- sin novedades: persistir solo si algo cambió --------------------
-    if had_fault or prev_count != len(funcs) or prev_max != cur_max:
-        seen.update(funcs)
-        state.update({"funciones": seen, "ultimo_conteo": len(funcs), "max_fecha": cur_max})
-        save_state(state)
-    return 0
+    state = migrate_state(load_state())
+    films_state = state.setdefault("films", {})
+    worst = 0
+    for film in FILMS:
+        fs = films_state.setdefault(film, {})
+        try:
+            worst = max(worst, process_film(film, fs))
+        except Exception as e:  # noqa: BLE001
+            print(f"[{film}] error inesperado: {type(e).__name__}: {e}", file=sys.stderr)
+            worst = 1
+    save_state(state)
+    return worst
 
 
 if __name__ == "__main__":

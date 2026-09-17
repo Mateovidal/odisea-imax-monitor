@@ -31,7 +31,7 @@ jobs:
           # Solo Telegram (email/dead-man desactivados a pedido del usuario).
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FILM_ID: "5875"
+          FILMS: "5875,6027"   # La Odisea + Oasis: Don't Look Back in Anger
           HOUSE_ID: "3250"
           VENUE_IS_IMAX: "1"
           # 0 = la fecha nueva del borde SÍ avisa (Showcase libera fecha por fecha).
