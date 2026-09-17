@@ -150,5 +150,6 @@
   "2026-09-16|IMAX-Subtitulado|22:30": "mié 2026-09-16 22:30 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)"
  },
  "ultimo_conteo": 1,
- "max_fecha": "2026-09-16"
+ "max_fecha": "2026-09-16",
+ "falla_avisada": "cero"
 }
