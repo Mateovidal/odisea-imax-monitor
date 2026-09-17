@@ -31,7 +31,9 @@ jobs:
           # Solo Telegram (email/dead-man desactivados a pedido del usuario).
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FILMS: "5875,6027"   # La Odisea + Oasis: Don't Look Back in Anger
+          FILMS: "6027"          # Oasis: Don't Look Back in Anger (La Odisea salió de cartel)
+          WATCH_NAMES: "avengers"  # descubre Avengers cuando aparezca en el catálogo
+          WATCH_EXCLUDE: "endgame,bonus"  # ignora re-funciones de Endgame
           HOUSE_ID: "3250"
           VENUE_IS_IMAX: "1"
           # 0 = la fecha nueva del borde SÍ avisa (Showcase libera fecha por fecha).

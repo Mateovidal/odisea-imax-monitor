@@ -43,11 +43,25 @@ import urllib.request
 from pathlib import Path
 
 HOUSE_ID = os.environ.get("HOUSE_ID", "3250")
-# Lista de pelis a vigilar en la misma sala IMAX (comma-separated). Back-compat FILM_ID.
+CATALOG_URL = "https://api.voyalcine.net/films"
+# Pelis fijas a vigilar en la sala IMAX (comma-separated). Back-compat FILM_ID.
 FILMS = [
     f.strip()
-    for f in os.environ.get("FILMS", os.environ.get("FILM_ID", "5875,6027")).split(",")
+    for f in os.environ.get("FILMS", os.environ.get("FILM_ID", "6027")).split(",")
     if f.strip()
+]
+# Descubrimiento por nombre: vigila cualquier peli del catálogo cuyo nombre matchee
+# WATCH_NAMES, salvo que también matchee WATCH_EXCLUDE. Sirve para pelis que todavía
+# no tienen filmid (ej: "avengers cuando salga"). Se resuelven a filmid en cada corrida.
+WATCH_NAMES = [
+    w.strip().lower()
+    for w in os.environ.get("WATCH_NAMES", "avengers").split(",")
+    if w.strip()
+]
+WATCH_EXCLUDE = [
+    w.strip().lower()
+    for w in os.environ.get("WATCH_EXCLUDE", "endgame,bonus").split(",")
+    if w.strip()
 ]
 
 
@@ -294,6 +308,47 @@ def is_horizon_roll(nuevas: dict, prev_max: str) -> bool:
     return d_solo == d_prev + dt.timedelta(days=1)
 
 
+def fetch_catalog() -> list:
+    """Lista de pelis del catálogo: [{'id':.., 'name':..}, ...]. Puede tirar ScrapeError.
+
+    Nota: el catálogo devuelve una LISTA, no el shape {'days':..} del tree, así que
+    no puede usar fetch_tree().
+    """
+    last = "sin detalle"
+    for i in range(3):
+        if i:
+            time.sleep(min(2 ** (i - 1), 4))
+        data = None
+        try:
+            req = urllib.request.Request(
+                CATALOG_URL, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.loads(r.read())
+        except Exception as e:  # noqa: BLE001
+            last = f"{type(e).__name__}: {e}"
+            continue
+        if isinstance(data, list):
+            return data
+        last = "respuesta inesperada (no es lista)"
+    raise ScrapeError("catalogo", f"no pude leer el catálogo: {last}")
+
+
+def discover_films(catalog: list) -> list:
+    """Filmids del catálogo cuyo nombre matchea WATCH_NAMES y no WATCH_EXCLUDE."""
+    out = []
+    for f in catalog:
+        name = str(f.get("name", "")).lower()
+        if not any(w in name for w in WATCH_NAMES):
+            continue
+        if any(x in name for x in WATCH_EXCLUDE):
+            continue
+        fid = f.get("id")
+        if fid is not None:
+            out.append(str(fid))
+    return out
+
+
 # --------------------------------------------------------------------------
 # Estado
 # --------------------------------------------------------------------------
@@ -441,7 +496,7 @@ def process_film(film: str, fs: dict) -> int:
 
 def main() -> int:
     print(
-        f"cfg: FILMS={','.join(FILMS)} house={HOUSE_ID} "
+        f"cfg: FILMS={','.join(FILMS)} watch={','.join(WATCH_NAMES)} house={HOUSE_ID} "
         f"SUPPRESS_HORIZON_ROLL={'1' if SUPPRESS_HORIZON_ROLL else '0'} "
         f"telegram={'on' if TG_TOKEN and TG_CHAT_ID else 'off'} "
         f"email={'on' if RESEND_API_KEY else 'off'} "
@@ -449,8 +504,23 @@ def main() -> int:
     )
     state = migrate_state(load_state())
     films_state = state.setdefault("films", {})
+
+    # Descubrimiento por nombre (ej: Avengers cuando salga). El catálogo manda; ante
+    # un blip uso lo último conocido para no dejar de vigilar una peli ya descubierta.
+    discovered = state.get("watch_discovered", [])
+    if WATCH_NAMES:
+        try:
+            discovered = discover_films(fetch_catalog())
+            state["watch_discovered"] = discovered
+            if discovered:
+                print(f"descubiertas por nombre {WATCH_NAMES}: {discovered}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[catalogo] no pude descubrir ({e}); uso lo último conocido: {discovered}",
+                  file=sys.stderr)
+
+    active = list(dict.fromkeys([*FILMS, *discovered]))  # dedup, orden estable
     worst = 0
-    for film in FILMS:
+    for film in active:
         fs = films_state.setdefault(film, {})
         try:
             worst = max(worst, process_film(film, fs))
