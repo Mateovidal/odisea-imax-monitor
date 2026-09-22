@@ -2,9 +2,12 @@
  "films": {
   "6027": {
    "nombre": "Oasis: Don't look back in anger",
-   "funciones": {},
-   "ultimo_conteo": 0,
-   "max_fecha": ""
+   "funciones": {
+    "2026-09-27|IMAX-Subtitulado|16:15": "dom 2026-09-27 16:15 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)",
+    "2026-09-29|IMAX-Subtitulado|19:40": "mar 2026-09-29 19:40 — IMAX-Subtitulado @ IMAX Theatre (Norcenter)"
+   },
+   "ultimo_conteo": 2,
+   "max_fecha": "2026-09-29"
   }
  },
  "watch_discovered": []
