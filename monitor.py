@@ -505,18 +505,27 @@ def main() -> int:
     state = migrate_state(load_state())
     films_state = state.setdefault("films", {})
 
-    # Descubrimiento por nombre (ej: Avengers cuando salga). El catálogo manda; ante
-    # un blip uso lo último conocido para no dejar de vigilar una peli ya descubierta.
-    discovered = state.get("watch_discovered", [])
+    # Descubrimiento por nombre (ej: Avengers/Dune cuando salgan). STICKY: una vez
+    # descubierta, la peli queda vigilada aunque después salga del catálogo (Showcase
+    # pone y saca preventas del catálogo; el tree por id sigue respondiendo).
+    discovered = set(state.get("watch_discovered", []))
+    # Recupera pelis ya presentes en el estado cuyo nombre matchea (p.ej. una que se
+    # descubrió antes y se perdió cuando el catálogo la sacó).
+    for fid, fs in films_state.items():
+        n = str(fs.get("nombre", "")).lower()
+        if any(w in n for w in WATCH_NAMES) and not any(x in n for x in WATCH_EXCLUDE):
+            discovered.add(fid)
     if WATCH_NAMES:
         try:
-            discovered = discover_films(fetch_catalog())
-            state["watch_discovered"] = discovered
-            if discovered:
-                print(f"descubiertas por nombre {WATCH_NAMES}: {discovered}")
+            nuevas_desc = set(discover_films(fetch_catalog())) - discovered
+            if nuevas_desc:
+                print(f"nuevas descubiertas por nombre {WATCH_NAMES}: {sorted(nuevas_desc)}")
+            discovered |= nuevas_desc
         except Exception as e:  # noqa: BLE001
-            print(f"[catalogo] no pude descubrir ({e}); uso lo último conocido: {discovered}",
+            print(f"[catalogo] no pude leer el catálogo ({e}); sigo con las conocidas",
                   file=sys.stderr)
+    discovered = sorted(discovered)
+    state["watch_discovered"] = discovered
 
     active = list(dict.fromkeys([*FILMS, *discovered]))  # dedup, orden estable
     worst = 0
